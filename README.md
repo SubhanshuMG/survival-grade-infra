@@ -1,4 +1,4 @@
-# 🚨 Survival-Grade Cloud Architecture (SGCA)
+# Survival-Grade Cloud Architecture (SGCA)
 
 ### Designing Systems That Survive Regional Collapse, Provider Failure & Digital Fragmentation
 
@@ -7,7 +7,7 @@
 This repository contains the **complete, working implementation** of a Survival-Grade Cloud Architecture: a multi-cloud active-active setup across AWS and GCP with independent DNS failover, cross-cloud data replication, provider-agnostic identity, and automated blackout testing.
 
 This is not a proof-of-concept. It's a production-ready blueprint used as the companion repo to the blog post:
-**[The Global Cloud Blackout](https://yourblog.hashnode.dev/the-global-cloud-blackout)**
+**[The Global Cloud Blackout](https://blogs.subhanshumg.com/the-global-cloud-blackout)**
 
 ---
 
@@ -31,9 +31,9 @@ This architecture survives **all four**.
 ```
 ┌─── Cloudflare DNS (Independent) ────────────────────────┐
 │   Health-based routing │ TTL: 30s │ NS1 as backup DNS   │
-└────────────┬────────────────────────────┬───────────────┘
-             │                            │
-┌────────────▼────────────┐  ┌────────────▼────────────┐
+└─────────────┬─────────────────────────────┬─────────────┘
+              │                             │
+┌─────────────▼────────────┐  ┌─────────────▼────────────┐
 │     AWS EKS (Primary)    │  │    GCP GKE (Secondary)   │
 │                          │  │                          │
 │  ArgoCD Agent            │  │  ArgoCD Agent            │
@@ -41,7 +41,7 @@ This architecture survives **all four**.
 │  Keycloak (Auth)         │  │  Keycloak (Auth)         │
 │  Vault (Secrets)         │  │  Vault (Secrets)         │
 │                          │  │                          │
-│  CockroachDB Node (x3)  │  │  CockroachDB Node (x3)  │
+│  CockroachDB Node (x3)   │  │  CockroachDB Node (x3)   │
 │  Kafka Broker            │  │  Kafka Broker            │
 │  S3 (Objects)            │  │  GCS (Objects, synced)   │
 └──────────────────────────┘  └──────────────────────────┘
@@ -224,7 +224,7 @@ The cost of a single hour of downtime for a business processing $2M/day is ~$83,
 ## Blog Post
 
 This repo is the companion to the full technical article:
-**[The Global Cloud Blackout: Designing Systems That Survive Regional Collapse, Provider Failure & Digital Fragmentation](https://yourblog.hashnode.dev/the-global-cloud-blackout)**
+**[The Global Cloud Blackout: Designing Systems That Survive Regional Collapse, Provider Failure & Digital Fragmentation](https://blogs.subhanshumg.com/the-global-cloud-blackout)**
 
 ---
 
