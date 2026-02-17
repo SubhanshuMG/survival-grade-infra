@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shopglobal-api
+  namespace: shopglobal
+  labels:
+    app: shopglobal-api
+    version: stable
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: shopglobal-api
+  template:
+    metadata:
+      labels:
+        app: shopglobal-api
+        version: stable
+    spec:
+      serviceAccountName: shopglobal-api
+      containers:
+        - name: api
+          image: shopglobal/api:IMAGE_TAG # Replaced by Kustomize overlay
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: shopglobal-secrets
+                  key: database-url
+            - name: KAFKA_BROKERS
+              valueFrom:
+                configMapKeyRef:
+                  name: shopglobal-config
+                  key: kafka-brokers
+            - name: AUTH_ISSUER_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: shopglobal-config
+                  key: auth-issuer-url
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: shopglobal-api
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: shopglobal-config
+  namespace: shopglobal
+data:
+  kafka-brokers: "PLACEHOLDER"
+  auth-issuer-url: "PLACEHOLDER"

@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: shopglobal
+  labels:
+    app: keycloak
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:24.0
+          args:
+            - start
+            - --hostname=auth.shopglobal.com
+            - --db=postgres
+            - --db-url=jdbc:postgresql://cockroachdb:26257/keycloak?sslmode=disable
+            - --db-username=$(KC_DB_USERNAME)
+            - --db-password=$(KC_DB_PASSWORD)
+            - --cache=ispn
+            - --cache-stack=kubernetes
+            - --health-enabled=true
+            - --metrics-enabled=true
+          env:
+            - name: KC_DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-secrets
+                  key: db-username
+            - name: KC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-secrets
+                  key: db-password
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: "admin"
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-secrets
+                  key: admin-password
+            - name: JAVA_OPTS_APPEND
+              value: "-Djgroups.dns.query=keycloak-headless.shopglobal.svc.cluster.local"
+          ports:
+            - containerPort: 8080
+              name: http
+            - containerPort: 7800
+              name: jgroups
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2
+              memory: 2Gi
+
+---
+# Headless service for Keycloak cluster discovery via JGroups
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak-headless
+  namespace: shopglobal
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - port: 7800
+      name: jgroups
+  selector:
+    app: keycloak
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: shopglobal
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 8080
+      name: http
+  selector:
+    app: keycloak

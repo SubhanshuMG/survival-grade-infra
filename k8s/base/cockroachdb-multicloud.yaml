@@ -1,0 +1,129 @@
+# CockroachDB multi-cloud deployment
+# Runs 3 nodes per cloud (6 total across AWS + GCP)
+# Configured with locality-aware replication to survive entire cloud failure
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cockroachdb-config
+  namespace: shopglobal
+data:
+  init-cluster.sh: |
+    #!/bin/bash
+    set -e
+    echo "Waiting for CockroachDB to be ready..."
+    sleep 30
+
+    cockroach sql --insecure --host=cockroachdb-0.cockroachdb:26257 <<EOF
+      -- Create application database
+      CREATE DATABASE IF NOT EXISTS shopglobal;
+
+      -- Create Keycloak database
+      CREATE DATABASE IF NOT EXISTS keycloak;
+
+      -- Configure replication: 2 replicas on AWS, 2 on GCP, 1 flexible
+      ALTER DATABASE shopglobal CONFIGURE ZONE USING
+        num_replicas = 5,
+        constraints = '{"+cloud=aws": 2, "+cloud=gcp": 2}',
+        lease_preferences = '[[+cloud=aws], [+cloud=gcp]]';
+
+      ALTER DATABASE keycloak CONFIGURE ZONE USING
+        num_replicas = 5,
+        constraints = '{"+cloud=aws": 2, "+cloud=gcp": 2}',
+        lease_preferences = '[[+cloud=aws], [+cloud=gcp]]';
+
+      -- Survival goal: maintain consensus even if one cloud is fully down
+      ALTER DATABASE shopglobal SURVIVE REGION FAILURE;
+      ALTER DATABASE keycloak SURVIVE REGION FAILURE;
+    EOF
+    echo "Cluster initialized successfully."
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cockroachdb
+  namespace: shopglobal
+  labels:
+    app: cockroachdb
+spec:
+  clusterIP: None
+  ports:
+    - port: 26257
+      targetPort: 26257
+      name: grpc
+    - port: 8080
+      targetPort: 8080
+      name: http
+  selector:
+    app: cockroachdb
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: cockroachdb
+  namespace: shopglobal
+spec:
+  serviceName: cockroachdb
+  replicas: 3 # Per cloud. Deploy this on both AWS and GCP.
+  selector:
+    matchLabels:
+      app: cockroachdb
+  template:
+    metadata:
+      labels:
+        app: cockroachdb
+    spec:
+      containers:
+        - name: cockroachdb
+          image: cockroachdb/cockroach:v24.1.0
+          ports:
+            - containerPort: 26257
+              name: grpc
+            - containerPort: 8080
+              name: http
+          command:
+            - /cockroach/cockroach
+            - start
+            - --advertise-addr=$(POD_NAME).cockroachdb.shopglobal.svc.cluster.local
+            - --join=cockroachdb-0.cockroachdb.shopglobal.svc.cluster.local:26257,cockroachdb-1.cockroachdb.shopglobal.svc.cluster.local:26257,cockroachdb-2.cockroachdb.shopglobal.svc.cluster.local:26257
+            - --locality=cloud=CLOUD_PROVIDER,region=CLOUD_REGION
+            - --cache=.25
+            - --max-sql-memory=.25
+            - --insecure # Use TLS certificates in production
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+            - name: datadir
+              mountPath: /cockroach/cockroach-data
+          resources:
+            requests:
+              cpu: "2"
+              memory: 4Gi
+            limits:
+              cpu: "4"
+              memory: 8Gi
+          readinessProbe:
+            httpGet:
+              path: /health?ready=1
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+  volumeClaimTemplates:
+    - metadata:
+        name: datadir
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 100Gi

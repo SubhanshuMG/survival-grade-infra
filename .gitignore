@@ -1,0 +1,38 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+!terraform.tfvars.example
+.terraform/
+.terraform.lock.hcl
+crash.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+blackout-drill-*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.env
+venv/
+
+# Node
+node_modules/
+dist/
+
+# Secrets (never commit these)
+*.pem
+*.key
+secrets/

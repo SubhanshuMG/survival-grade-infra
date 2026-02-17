@@ -1,0 +1,26 @@
+# Copy this file to terraform.tfvars and fill in your values
+# cp terraform.tfvars.example terraform.tfvars
+
+project_name = "shopglobal"
+
+# AWS
+aws_region = "us-east-1"
+
+# GCP
+gcp_project = "your-gcp-project-id"
+gcp_region  = "us-central1"
+
+# Cloudflare
+cloudflare_zone_id    = "your-cloudflare-zone-id"
+cloudflare_account_id = "your-cloudflare-account-id"
+
+# Application
+domain = "app.shopglobal.com"
+
+# Cluster sizing
+k8s_node_count   = 3
+k8s_node_type_aws = "t3.xlarge"
+k8s_node_type_gcp = "e2-standard-4"
+
+# Notifications
+oncall_email = "oncall@yourcompany.com"

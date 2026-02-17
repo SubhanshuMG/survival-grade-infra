@@ -1,0 +1,26 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: shopglobal
+
+resources:
+  - ../../base/namespace.yaml
+  - ../../base/deployment.yaml
+  - ../../base/service.yaml
+
+patches:
+  - target:
+      kind: ConfigMap
+      name: shopglobal-config
+    patch: |
+      - op: replace
+        path: /data/kafka-brokers
+        value: "kafka-aws-broker-1:9092,kafka-aws-broker-2:9092,kafka-aws-broker-3:9092"
+      - op: replace
+        path: /data/auth-issuer-url
+        value: "https://auth.shopglobal.com/realms/shopglobal"
+
+images:
+  - name: shopglobal/api
+    newName: 123456789.dkr.ecr.us-east-1.amazonaws.com/shopglobal-api
+    newTag: latest

@@ -1,0 +1,115 @@
+name: Multi-Cloud Build & Push
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "docker/**"
+
+env:
+  IMAGE_NAME: shopglobal-api
+  AWS_REGION: us-east-1
+  GCP_PROJECT: shopglobal-prod
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write # Required for OIDC auth to AWS and GCP
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set image tag
+        id: tag
+        run: echo "TAG=$(git rev-parse --short HEAD)-$(date +%s)" >> $GITHUB_OUTPUT
+
+      # === Build Image ===
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build container image
+        run: |
+          docker build \
+            -t $IMAGE_NAME:${{ steps.tag.outputs.TAG }} \
+            -t $IMAGE_NAME:latest \
+            -f docker/Dockerfile .
+
+      # === Sign with Cosign ===
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      # === Push to AWS ECR ===
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/github-actions-ecr
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Push to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        run: |
+          docker tag $IMAGE_NAME:${{ steps.tag.outputs.TAG }} \
+            $ECR_REGISTRY/$IMAGE_NAME:${{ steps.tag.outputs.TAG }}
+          docker tag $IMAGE_NAME:latest \
+            $ECR_REGISTRY/$IMAGE_NAME:latest
+          docker push $ECR_REGISTRY/$IMAGE_NAME:${{ steps.tag.outputs.TAG }}
+          docker push $ECR_REGISTRY/$IMAGE_NAME:latest
+
+      - name: Sign ECR image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+        run: |
+          cosign sign --yes \
+            $ECR_REGISTRY/$IMAGE_NAME:${{ steps.tag.outputs.TAG }}
+
+      # === Push to GCP Artifact Registry ===
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Configure Docker for GCP
+        run: gcloud auth configure-docker gcr.io
+
+      - name: Push to GCR
+        run: |
+          docker tag $IMAGE_NAME:${{ steps.tag.outputs.TAG }} \
+            gcr.io/$GCP_PROJECT/$IMAGE_NAME:${{ steps.tag.outputs.TAG }}
+          docker tag $IMAGE_NAME:latest \
+            gcr.io/$GCP_PROJECT/$IMAGE_NAME:latest
+          docker push gcr.io/$GCP_PROJECT/$IMAGE_NAME:${{ steps.tag.outputs.TAG }}
+          docker push gcr.io/$GCP_PROJECT/$IMAGE_NAME:latest
+
+      - name: Sign GCR image
+        run: |
+          cosign sign --yes \
+            gcr.io/$GCP_PROJECT/$IMAGE_NAME:${{ steps.tag.outputs.TAG }}
+
+      # === Update Kustomize image tags (triggers ArgoCD sync) ===
+      - name: Update image tags in Git
+        run: |
+          cd k8s/overlays/aws
+          kustomize edit set image \
+            shopglobal/api=*:${{ steps.tag.outputs.TAG }}
+
+          cd ../../overlays/gcp
+          kustomize edit set image \
+            shopglobal/api=*:${{ steps.tag.outputs.TAG }}
+
+      - name: Commit and push tag update
+        run: |
+          git config user.name "github-actions"
+          git config user.email "ci@shopglobal.com"
+          git add -A
+          git commit -m "ci: update image to ${{ steps.tag.outputs.TAG }}"
+          git push
